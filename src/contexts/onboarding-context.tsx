@@ -5,6 +5,8 @@ import { createContext, useContext, useState, ReactNode } from "react"
 interface OnboardingContextType {
   freitext: string
   setFreitext: (text: string) => void
+  skillIds: string[]
+  setSkillIds: (skills: string[]) => void
   email: string
   setEmail: (email: string) => void
   step: number
@@ -16,17 +18,19 @@ const OnboardingContext = createContext<OnboardingContextType | null>(null)
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [freitext, setFreitext] = useState("")
+  const [skillIds, setSkillIds] = useState<string[]>([])
   const [email, setEmail] = useState("")
   const [step, setStep] = useState(1)
 
   const reset = () => {
     setFreitext("")
+    setSkillIds([])
     setEmail("")
     setStep(1)
   }
 
   return (
-    <OnboardingContext.Provider value={{ freitext, setFreitext, email, setEmail, step, setStep, reset }}>
+    <OnboardingContext.Provider value={{ freitext, setFreitext, skillIds, setSkillIds, email, setEmail, step, setStep, reset }}>
       {children}
     </OnboardingContext.Provider>
   )

@@ -12,8 +12,8 @@ import { ArrowLeft, User } from "lucide-react"
 type MatchDetail = {
   id: string
   score: number
-  my_entry: { raw_text: string; intent: string }
-  their_entry: { raw_text: string; intent: string }
+  my_entry: { raw_text: string; intent: string; skill_ids: string[] }
+  their_entry: { raw_text: string; intent: string; skill_ids: string[] }
   their_profile: { display_name: string; city: string | null }
 }
 
@@ -34,16 +34,16 @@ export default function MatchPage() {
         .from("matches")
         .select(`
           id, score,
-          entry_a:entries!entry_a_id(id, raw_text, intent, user_id),
-          entry_b:entries!entry_b_id(id, raw_text, intent, user_id)
+          entry_a:entries!entry_a_id(id, raw_text, intent, skill_ids, user_id),
+          entry_b:entries!entry_b_id(id, raw_text, intent, skill_ids, user_id)
         `)
         .eq("id", id)
         .single()
 
       if (!data) { router.replace("/dashboard"); return }
 
-      const entryA = data.entry_a as unknown as { id: string; raw_text: string; intent: string; user_id: string }
-      const entryB = data.entry_b as unknown as { id: string; raw_text: string; intent: string; user_id: string }
+      const entryA = data.entry_a as unknown as { id: string; raw_text: string; intent: string; skill_ids: string[]; user_id: string }
+      const entryB = data.entry_b as unknown as { id: string; raw_text: string; intent: string; skill_ids: string[]; user_id: string }
 
       const myEntry = entryA.user_id === user.id ? entryA : entryB
       const theirEntry = entryA.user_id === user.id ? entryB : entryA
@@ -94,7 +94,7 @@ export default function MatchPage() {
         {/* Score */}
         <div className="rounded-xl bg-primary/8 border border-primary/20 p-4 text-center">
           <p className="text-3xl font-bold text-primary">{Math.round(match.score * 100)}%</p>
-          <p className="text-xs text-muted-foreground mt-1">Match-Score</p>
+          <p className="text-xs text-muted-foreground mt-1">{t.match.score_label}</p>
         </div>
 
         {/* Ihr Eintrag */}
@@ -106,16 +106,30 @@ export default function MatchPage() {
               <Badge variant="secondary" className="text-xs">{match.their_profile.city}</Badge>
             )}
           </div>
-          <div className="rounded-xl border border-border bg-card p-4">
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
             <p className="text-sm text-foreground">{match.their_entry.raw_text}</p>
+            {match.their_entry.skill_ids?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {match.their_entry.skill_ids.map((skill) => (
+                  <Badge key={skill} variant="outline" className="text-xs px-2 py-0.5">{skill}</Badge>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Mein Eintrag */}
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">Dein Eintrag</p>
-          <div className="rounded-xl border border-border bg-muted/30 p-4">
+          <p className="text-xs text-muted-foreground">{t.match.my_entry}</p>
+          <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
             <p className="text-sm text-foreground">{match.my_entry.raw_text}</p>
+            {match.my_entry.skill_ids?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {match.my_entry.skill_ids.map((skill) => (
+                  <Badge key={skill} variant="outline" className="text-xs px-2 py-0.5">{skill}</Badge>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -124,7 +138,7 @@ export default function MatchPage() {
           className="w-full font-semibold"
           disabled
         >
-          Kontakt aufnehmen (demnächst)
+          {t.match.contact_soon}
         </Button>
       </div>
     </main>
