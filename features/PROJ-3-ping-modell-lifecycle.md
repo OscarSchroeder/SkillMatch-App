@@ -1,6 +1,6 @@
 # PROJ-3: Ping-Modell, Lifecycle & KI-Klassifikation
 
-## Status: Planned
+## Status: In Progress
 **Created:** 2026-02-20
 **Last Updated:** 2026-02-20
 
@@ -164,7 +164,170 @@ Als Nutzer möchte ich eine Push-/In-App-Benachrichtigung erhalten, wenn ein Mat
 ---
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+**Erstellt:** 2026-02-20
+
+---
+
+### A) UI-Komponentenstruktur
+
+```
+/onboarding/create (GEÄNDERT)
++-- Textarea: "Was geht's?"
++-- Skill-Vorschläge (NEU, erscheinen nach 500ms Pause beim Tippen)
+|   +-- Ladezustand (Spinner)
+|   +-- Skill-Chips (max 3, KI-vorgeschlagen)
+|       +-- [✓ Badminton] [✓ Tennis] [✗ Squash]
+|   +-- "+ Eigenen Skill hinzufügen" (Freitext-Input)
++-- "Weiter"-Button (inkl. bestätigte Skills)
+
+/dashboard (STARK GEÄNDERT)
++-- Header (Logo + Bell + Logout — unverändert)
++-- Info-Banner (unverändert)
++-- Tabs: [Aktiv] [Pausiert] [Erledigt]  ← "Abgeschlossen" → "Erledigt"
++-- Ping-Karte (erweitert)
+|   +-- Textvorschau
+|   +-- Kategorie-Badge
+|   +-- Skill-Labels (bis 3 farbige Chips, falls vorhanden)
+|   +-- Match-Anzahl
+|   +-- Aktionen: [✎ Edit] [⏸ Pause] [✓ Erledigt] [🗑 Löschen] [↗ Teilen]
+|                          ↑ NEU: "Erledigt"-Aktion
++-- FAB: "Neuen Ping erstellen"
+
+/matches/[id] (LEICHT GEÄNDERT)
++-- Score-Badge (unverändert)
++-- Partner-Profil (unverändert)
++-- Partner-Ping-Text
++-- Partner-Skill-Labels (NEU — falls vorhanden)
++-- Eigener Ping-Text
++-- Eigene Skill-Labels (NEU — falls vorhanden)
++-- CTA: "Kontakt aufnehmen" (weiterhin deaktiviert)
+```
+
+---
+
+### B) Datenmodell
+
+**Ping** (Erweiterung der bestehenden `entries`-Tabelle):
+
+| Feld | Typ | Beschreibung |
+|------|-----|-------------|
+| id | UUID | Eindeutige ID (unverändert) |
+| user_id | UUID | Besitzer (unverändert) |
+| raw_text | Text | Freitext des Nutzers (unverändert) |
+| category | Text | Kategorie (unverändert, z.B. "sport") |
+| status | Text | **NEU:** "active" / "paused" / "done" / "deleted" (ersetzt "closed") |
+| **specificity** | Text | **NEU:** "OPEN" oder "SPECIFIC" — KI-bestimmt |
+| **skill_ids** | Text[] | **NEU:** Bis zu 3 Freitext-Skills (nutzerbestätigt) |
+| **classification** | Text | **NEU:** "PEER" / "NEED" / "OFFER" — KI-intern, nicht UI-sichtbar |
+| intent | Text | Alt-Feld (bleibt kompatibel, maps auf classification) |
+| embedding | Vektor | OpenAI-Embedding (unverändert) |
+| created_at | Timestamp | (unverändert) |
+
+**Migration bestehender Einträge (einmalig, kein Datenverlust):**
+- Alle Einträge bekommen `specificity = OPEN`, `skill_ids = []`
+- `status = "closed"` → `status = "done"`
+- `classification` wird beim nächsten embed-Lauf automatisch gesetzt
+
+---
+
+### C) System-Architektur (Datenfluss)
+
+```
+PING ERSTELLEN:
+Nutzer tippt Text
+    ↓ (nach 500ms Pause)
+Browser → POST /api/classify-skills → OpenAI gpt-4o-mini
+    ↓ (synchron, ~1-2s)
+Skill-Vorschläge erscheinen als Chips
+    ↓ (Nutzer bestätigt)
+Skills im Onboarding-Context gespeichert
+    ↓ (nach Auth + Profil)
+Ping in DB gespeichert (skill_ids, status=active, specificity, intent=pending)
+    ↓ (fire-and-forget, asynchron)
+embed-entry Edge Function:
+    ├── OpenAI Embedding (text → Vektor)
+    ├── KI: PEER/NEED/OFFER (classification)
+    └── KI: OPEN/SPECIFIC (specificity)
+    → DB-Update: embedding + classification + specificity
+
+MATCHING (alle 15 min, Vercel Cron):
+run-matching Edge Function
+    ↓
+find_new_matches SQL:
+    ├── Filter: status=active, embedding vorhanden
+    ├── Filter: classification kompatibel (PEER↔PEER, NEED↔OFFER)
+    ├── Cosine Similarity > 0.50
+    └── Skill-Overlap Bonus berechnen
+    ↓
+Nur Matches mit score ≥ 0.50 gespeichert
+    ↓ (split)
+score ≥ 0.75 → send-notifications: Push + In-App + E-Mail
+score 0.50-0.74 → send-notifications: nur In-App
+```
+
+---
+
+### D) Neue und geänderte Dateien
+
+**Neue Dateien:**
+- `src/app/api/classify-skills/route.ts` — synchrone API für Skill-Vorschläge im UI
+
+**Geänderte Dateien:**
+
+| Datei | Änderung |
+|-------|---------|
+| `supabase/functions/embed-entry/index.ts` | + PEER/NEED/OFFER Klassifikation, + OPEN/SPECIFIC |
+| `supabase/functions/run-matching/index.ts` | + Classification-Filter, + Skill-Overlap-Bonus, + Score-Schwellen |
+| `supabase/functions/send-notifications/index.ts` | + Score-Schwelle prüfen (≥0.75 = Push, sonst In-App only) |
+| `src/app/onboarding/create/page.tsx` | + Skill-Vorschläge-Bereich (Chips + Custom Input) |
+| `src/app/onboarding/profile/page.tsx` | + `skill_ids` aus Context beim Speichern übernehmen |
+| `src/contexts/onboarding-context.tsx` | + `skillIds: string[]` State |
+| `src/app/dashboard/page.tsx` | + Tab "Erledigt", + "Als erledigt"-Aktion, + Skill-Labels, + "Ping"-Terminology |
+| `src/app/matches/[id]/page.tsx` | + Skill-Labels für beide Pings anzeigen |
+| `src/lib/translations.ts` | + ~15 neue Keys (Skills, DONE-Status) |
+| **Supabase DB Migration** | + 3 neue Spalten (specificity, skill_ids, classification), status "closed"→"done" |
+| **Supabase SQL** | find_new_matches aktualisiert (classification-Filter + Skill-Bonus) |
+
+---
+
+### E) Technologie-Entscheidungen
+
+**Warum Skill-Vorschläge auf der Create-Seite (inline)?**
+Laut PRD-Prinzip: „Friction killt Viralität." Ein zusätzlicher Screen kostet Registrierungen. Die Chips erscheinen direkt unter dem Textfeld — kein extra Schritt, keine extra URL.
+
+**Warum separater `/api/classify-skills` Endpunkt?**
+Die Skill-Vorschläge müssen synchron sein (UI wartet auf Antwort). Die `embed-entry` Edge Function ist fire-and-forget und taugt nicht für synchrone UI-Calls. Die neue API Route läuft im Next.js Backend und ist authentifiziert via Supabase-Session.
+
+**Warum skills als Text-Array (keine UUID-Taxonomie)?**
+PROJ-4 wird die vollständige Skill-Taxonomie einführen. In PROJ-3 reichen Freitext-Labels (case-insensitive Matching). Das ermöglicht sofortigen Start ohne Taxonomie-Aufbau.
+
+**Warum soft-delete statt hartem Delete?**
+`status = "deleted"` ist ein Soft-Delete. Die Zeile bleibt in der DB (für Analytics, Compliance), ist aber via RLS unsichtbar für den Nutzer und aus dem Matching-Pool entfernt. Matches werden auf `cancelled` gesetzt.
+
+**Warum `find_new_matches` SQL-Funktion erweitern statt neu schreiben?**
+Die bestehende Funktion (pgvector Cosine Similarity + Unique-Constraint) funktioniert stabil. Wir erweitern sie um 2 Filter (classification + Schwellenwert) — minimales Risiko, maximale Rückwärtskompatibilität.
+
+---
+
+### F) Build-Reihenfolge (für Entwickler)
+
+1. **DB-Migration** (Basis für alles) — neue Spalten + status-Wert
+2. **embed-entry erweitern** — classification + specificity parallel zum Embedding
+3. **find_new_matches SQL** — classification-Filter + Skill-Overlap
+4. **run-matching + send-notifications** — Score-Schwellen implementieren
+5. **API Route /api/classify-skills** — synchrone Skill-Vorschläge
+6. **Onboarding (create + profile)** — Skill-Chips UI + Context-Erweiterung
+7. **Dashboard** — Ping-Terminology + DONE-Tab + Skill-Labels
+8. **Match-Seite** — Skill-Labels ergänzen
+9. **Translations** — alle neuen Keys
+10. **Migration ausführen** — bestehende Entries aktualisieren
+
+---
+
+### G) Neue npm-Abhängigkeiten
+
+Keine neuen Pakete erforderlich. Alle benötigten Bibliotheken (shadcn/ui, Supabase, OpenAI via fetch) sind bereits installiert.
 
 ## QA Test Results
 _To be added by /qa_
