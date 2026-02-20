@@ -170,10 +170,13 @@ export default function DashboardPage() {
     if (!editEntry || editText.trim().length < 10) return
     setSaving(true)
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSaving(false); return }
     const { error } = await supabase
       .from("entries")
       .update({ raw_text: editText.trim() })
       .eq("id", editEntry.id)
+      .eq("user_id", user.id)
     setSaving(false)
     if (error) { toast.error(t.errors.save_failed); return }
     setEntries((prev) =>
