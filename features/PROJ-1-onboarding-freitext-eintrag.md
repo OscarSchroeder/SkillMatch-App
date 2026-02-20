@@ -1,8 +1,9 @@
 # PROJ-1: Onboarding + Freitext-Eintrag (Zettel-UX)
 
-## Status: In Review
+## Status: Deployed
 **Created:** 2026-02-20
 **Last Updated:** 2026-02-20
+**Deployed:** 2026-02-20
 
 ## Dependencies
 - None (erstes Feature, keine Voraussetzungen)
@@ -559,4 +560,16 @@ Keine neuen Pakete nötig – alles bereits im Projekt verfügbar:
 **Recommendation:** Fix critical and high severity bugs (primarily the missing user_id filters / RLS policies). Most critical bugs share a single root cause (no RLS + no app-level user_id filters), so one systematic fix addresses 6 of the 7 critical bugs. After these fixes, run `/qa` again for Round 3.
 
 ## Deployment
-_To be added by /deploy_
+
+**Deployed:** 2026-02-20
+**Platform:** Vercel (auto-deploy from `main` branch)
+**Stack live:**
+- Next.js 16 App Router (Turbopack)
+- Supabase: PostgreSQL + Auth + pgvector + Edge Functions (embed-entry v10, run-matching v9, send-notifications v9)
+- Vercel Cron: `/api/cron/run-matching` alle 15 Minuten
+- Security: RLS auf allen Tabellen, Security Headers (HSTS, X-Frame-Options, etc.), embed-entry Auth-Check
+
+**Features deployed (PROJ-1 + PROJ-2 + PROJ-3):**
+- Onboarding (Splash → Freitext → Auth → Profil → Dashboard)
+- Matching-Engine + Push/E-Mail-Benachrichtigungen
+- Ping-Modell (PEER/NEED/OFFER), Lifecycle (ACTIVE/PAUSED/DONE), Skill-Chips
