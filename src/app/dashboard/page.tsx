@@ -48,6 +48,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [pushEnabled, setPushEnabled] = useState(false)
+  const [matchCounts, setMatchCounts] = useState<Record<string, number>>({})
 
   useEffect(() => {
     const supabase = createClient()
@@ -93,7 +94,22 @@ export default function DashboardPage() {
       .from("entries")
       .select("*")
       .order("created_at", { ascending: false })
-    if (!error && data) setEntries(data)
+    if (!error && data) {
+      setEntries(data)
+      if (data.length > 0) {
+        const ids = data.map((e: Entry) => e.id)
+        const { data: matchRows } = await supabase
+          .from("matches")
+          .select("entry_a_id, entry_b_id")
+          .or(`entry_a_id.in.(${ids.join(",")}),entry_b_id.in.(${ids.join(",")})`)
+        const counts: Record<string, number> = {}
+        for (const m of matchRows ?? []) {
+          counts[m.entry_a_id] = (counts[m.entry_a_id] ?? 0) + 1
+          counts[m.entry_b_id] = (counts[m.entry_b_id] ?? 0) + 1
+        }
+        setMatchCounts(counts)
+      }
+    }
     setLoading(false)
   }
 
@@ -205,7 +221,7 @@ export default function DashboardPage() {
 
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
-          0 {t.dashboard.match_label}
+          {matchCounts[entry.id] ?? 0} {t.dashboard.match_label}
         </span>
         <div className="flex gap-1">
           <button
