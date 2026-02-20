@@ -42,8 +42,8 @@ export default function MatchPage() {
 
       if (!data) { router.replace("/dashboard"); return }
 
-      const entryA = data.entry_a as { id: string; raw_text: string; intent: string; user_id: string }
-      const entryB = data.entry_b as { id: string; raw_text: string; intent: string; user_id: string }
+      const entryA = data.entry_a as unknown as { id: string; raw_text: string; intent: string; user_id: string }
+      const entryB = data.entry_b as unknown as { id: string; raw_text: string; intent: string; user_id: string }
 
       const myEntry = entryA.user_id === user.id ? entryA : entryB
       const theirEntry = entryA.user_id === user.id ? entryB : entryA

@@ -13,7 +13,8 @@
 | ID | Feature | Status | Spec | Created |
 |----|---------|--------|------|---------|
 | PROJ-1 | Onboarding + Freitext-Eintrag (Zettel-UX) | In Review | [Spec](PROJ-1-onboarding-freitext-eintrag.md) | 2026-02-20 |
+| PROJ-2 | Matching-Engine + Match-Benachrichtigungen | In Progress | [Plan](../docs/plans/2026-02-20-matching-notifications.md) | 2026-02-20 |
 
 <!-- Add features above this line -->
 
-## Next Available ID: PROJ-2
+## Next Available ID: PROJ-3
