@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Logo } from "@/components/logo"
 import { useLang } from "@/contexts/language-context"
 import { useOnboarding } from "@/contexts/onboarding-context"
+import { createClient } from "@/lib/supabase-browser"
 import { ChevronRight, Lightbulb } from "lucide-react"
 
 export default function CreatePage() {
@@ -16,6 +17,7 @@ export default function CreatePage() {
   const { freitext, setFreitext } = useOnboarding()
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
   const [error, setError] = useState("")
+  const [isAuthed, setIsAuthed] = useState(false)
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -23,6 +25,13 @@ export default function CreatePage() {
     }, 2800)
     return () => clearInterval(interval)
   }, [t.create.placeholders.length])
+
+  // Check if user is already authenticated (returning user creating new ping)
+  useEffect(() => {
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      if (session) setIsAuthed(true)
+    })
+  }, [])
 
   const handleChange = (val: string) => {
     setFreitext(val)
@@ -34,7 +43,15 @@ export default function CreatePage() {
       setError(t.create.validation_min)
       return
     }
-    router.push("/onboarding/why")
+    // Save freitext to sessionStorage as backup (survives Magic Link redirect)
+    sessionStorage.setItem("skillmatch_freitext", freitext.trim())
+
+    if (isAuthed) {
+      // Existing user: skip auth screens, go directly to profile (new entry creation)
+      router.push("/onboarding/profile")
+    } else {
+      router.push("/onboarding/why")
+    }
   }
 
   const isValid = freitext.trim().length >= 10

@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Logo } from "@/components/logo"
 import { useLang } from "@/contexts/language-context"
 import { useOnboarding } from "@/contexts/onboarding-context"
 import { createClient } from "@/lib/supabase-browser"
-import { ChevronLeft, Mail } from "lucide-react"
+import { ChevronLeft, Mail, Lock } from "lucide-react"
 import { toast } from "sonner"
 
 function AuthContent() {
@@ -19,55 +20,87 @@ function AuthContent() {
   const { setEmail: saveEmail } = useOnboarding()
 
   const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
   const [emailError, setEmailError] = useState("")
+  const [passwordError, setPasswordError] = useState("")
 
   const linkExpired = searchParams.get("error") === "link_expired"
 
   const validateEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
 
+  // --- Magic Link ---
   const handleMagicLink = async () => {
-    if (!validateEmail(email)) {
-      setEmailError(t.auth.invalid_email)
-      return
-    }
+    if (!validateEmail(email)) { setEmailError(t.auth.invalid_email); return }
     setEmailError("")
     setLoading(true)
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     })
     setLoading(false)
-    if (error) {
-      toast.error(t.errors.auth_failed)
-      return
-    }
+    if (error) { toast.error(t.errors.auth_failed); return }
     saveEmail(email)
     router.push("/onboarding/confirm")
   }
 
-  const handleGoogle = async () => {
-    setGoogleLoading(true)
+  // --- Password: Login ---
+  const handleLogin = async () => {
+    let valid = true
+    if (!validateEmail(email)) { setEmailError(t.auth.invalid_email); valid = false }
+    if (password.length < 6) { setPasswordError(t.auth.password_short); valid = false }
+    if (!valid) return
+    setEmailError("")
+    setPasswordError("")
+    setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setGoogleLoading(false)
-      toast.error(t.errors.google_failed)
+      setLoading(false)
+      toast.error(t.auth.login_failed)
+      return
+    }
+    // Check if user already has a profile → dashboard, else onboarding
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", data.user.id)
+      .single()
+    setLoading(false)
+    if (profile) {
+      window.location.href = "/dashboard"
+    } else {
+      window.location.href = "/onboarding/profile"
+    }
+  }
+
+  // --- Password: Sign Up ---
+  const handleSignUp = async () => {
+    let valid = true
+    if (!validateEmail(email)) { setEmailError(t.auth.invalid_email); valid = false }
+    if (password.length < 6) { setPasswordError(t.auth.password_short); valid = false }
+    if (!valid) return
+    setEmailError("")
+    setPasswordError("")
+    setLoading(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    setLoading(false)
+    if (error) { toast.error(t.errors.auth_failed); return }
+    if (data.session) {
+      // Auto-confirmed (email confirmation disabled in Supabase)
+      window.location.href = "/onboarding/profile"
+    } else {
+      // Email confirmation required
+      saveEmail(email)
+      router.push("/onboarding/confirm")
     }
   }
 
   return (
     <main className="flex flex-col items-center min-h-screen px-5 py-8">
-      <div className="w-full max-w-md flex flex-col gap-8">
+      <div className="w-full max-w-md flex flex-col gap-6">
         {/* Header */}
         <div className="flex items-center gap-3">
           <button
@@ -86,71 +119,97 @@ function AuthContent() {
           </div>
         )}
 
-        <div className="space-y-2">
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold text-foreground">{t.auth.headline}</h1>
         </div>
 
-        {/* Magic Link Form */}
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">{t.auth.email_label}</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder={t.auth.email_placeholder}
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value)
-                if (emailError) setEmailError("")
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handleMagicLink()}
-              className="h-12 text-base"
-              aria-describedby={emailError ? "email-error" : undefined}
-            />
-            {emailError && (
-              <p id="email-error" className="text-sm text-destructive" aria-live="polite">
-                {emailError}
-              </p>
-            )}
-          </div>
-
-          <Button
-            size="lg"
-            className="w-full text-base font-semibold"
-            onClick={handleMagicLink}
-            disabled={loading || !email}
-          >
-            <Mail className="w-4 h-4 mr-2" />
-            {loading ? t.auth.sending : t.auth.magic_link_cta}
-          </Button>
+        {/* Shared email field */}
+        <div className="space-y-2">
+          <Label htmlFor="email">{t.auth.email_label}</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder={t.auth.email_placeholder}
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError("") }}
+            className="h-12 text-base"
+            aria-describedby={emailError ? "email-error" : undefined}
+          />
+          {emailError && (
+            <p id="email-error" className="text-sm text-destructive" aria-live="polite">
+              {emailError}
+            </p>
+          )}
         </div>
 
-        {/* Divider */}
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-border" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-3 text-muted-foreground">{t.auth.divider}</span>
-          </div>
-        </div>
+        {/* Tabs: Passwort | Magic Link */}
+        <Tabs defaultValue="password" className="w-full">
+          <TabsList className="w-full mb-4">
+            <TabsTrigger value="password" className="flex-1">
+              <Lock className="w-3.5 h-3.5 mr-1.5" />
+              {t.auth.tab_password}
+            </TabsTrigger>
+            <TabsTrigger value="magic" className="flex-1">
+              <Mail className="w-3.5 h-3.5 mr-1.5" />
+              {t.auth.tab_magic}
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Google OAuth */}
-        <Button
-          size="lg"
-          variant="outline"
-          className="w-full text-base font-semibold"
-          onClick={handleGoogle}
-          disabled={googleLoading}
-        >
-          <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-          </svg>
-          {googleLoading ? "…" : t.auth.google_cta}
-        </Button>
+          {/* Password Tab */}
+          <TabsContent value="password" className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="password">{t.auth.password_label}</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder={t.auth.password_placeholder}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); if (passwordError) setPasswordError("") }}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                className="h-12 text-base"
+                aria-describedby={passwordError ? "password-error" : undefined}
+              />
+              {passwordError && (
+                <p id="password-error" className="text-sm text-destructive" aria-live="polite">
+                  {passwordError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1 font-semibold"
+                onClick={handleLogin}
+                disabled={loading || !email || !password}
+              >
+                {loading ? "…" : t.auth.login_cta}
+              </Button>
+              <Button
+                size="lg"
+                className="flex-1 font-semibold"
+                onClick={handleSignUp}
+                disabled={loading || !email || !password}
+              >
+                {loading ? "…" : t.auth.signup_cta}
+              </Button>
+            </div>
+          </TabsContent>
+
+          {/* Magic Link Tab */}
+          <TabsContent value="magic" className="space-y-4">
+            <Button
+              size="lg"
+              className="w-full text-base font-semibold"
+              onClick={handleMagicLink}
+              disabled={loading || !email}
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              {loading ? t.auth.sending : t.auth.magic_link_cta}
+            </Button>
+          </TabsContent>
+        </Tabs>
       </div>
     </main>
   )

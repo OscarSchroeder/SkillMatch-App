@@ -18,7 +18,18 @@ const MAX_SKILLS = 3
 export default function ProfilePage() {
   const router = useRouter()
   const { t, lang, setLang } = useLang()
-  const { freitext, skillIds, setSkillIds, reset } = useOnboarding()
+  const { freitext: contextFreitext, skillIds, setSkillIds, reset } = useOnboarding()
+
+  // Restore freitext from sessionStorage if context is empty (happens after Magic Link redirect)
+  const [freitext, setFreitextState] = useState(contextFreitext)
+  useEffect(() => {
+    if (!contextFreitext.trim()) {
+      const stored = sessionStorage.getItem("skillmatch_freitext") ?? ""
+      if (stored) setFreitextState(stored)
+    } else {
+      setFreitextState(contextFreitext)
+    }
+  }, [contextFreitext])
 
   const [name, setName] = useState("")
   const [city, setCity] = useState("")
@@ -138,6 +149,7 @@ export default function ProfilePage() {
 
       setLang(selectedLang)
       reset()
+      sessionStorage.removeItem("skillmatch_freitext")
       router.push("/dashboard")
     } catch {
       toast.error(t.errors.save_failed)
