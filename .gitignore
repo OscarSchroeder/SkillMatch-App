@@ -37,6 +37,9 @@ yarn-error.log*
 # MCP config (contains secrets)
 .mcp.json
 
+# git worktrees
+.worktrees/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
