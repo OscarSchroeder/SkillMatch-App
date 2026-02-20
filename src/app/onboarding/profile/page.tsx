@@ -50,7 +50,6 @@ export default function ProfilePage() {
           display_name: name.trim(),
           language: selectedLang,
           city: city.trim() || null,
-          referral_code: Math.random().toString(36).substring(2, 10).toUpperCase(),
         })
 
       if (profileError) throw profileError

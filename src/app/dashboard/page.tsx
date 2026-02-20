@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 import { Logo } from "@/components/logo"
 import { useLang } from "@/contexts/language-context"
 import { createClient } from "@/lib/supabase-browser"
-import { Plus, Share2, Pause, Play, Trash2, Info, LogOut } from "lucide-react"
+import { Plus, Share2, Pause, Play, Trash2, Info, LogOut, Pencil } from "lucide-react"
 import { toast } from "sonner"
 
 type Entry = {
@@ -19,12 +21,17 @@ type Entry = {
   created_at: string
 }
 
+const MAX_CHARS = 500
+
 export default function DashboardPage() {
   const router = useRouter()
   const { t } = useLang()
   const [entries, setEntries] = useState<Entry[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [editEntry, setEditEntry] = useState<Entry | null>(null)
+  const [editText, setEditText] = useState("")
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -84,6 +91,28 @@ export default function DashboardPage() {
     router.replace("/")
   }
 
+  const openEdit = (entry: Entry) => {
+    setEditEntry(entry)
+    setEditText(entry.raw_text)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editEntry || editText.trim().length < 10) return
+    setSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("entries")
+      .update({ raw_text: editText.trim() })
+      .eq("id", editEntry.id)
+    setSaving(false)
+    if (error) { toast.error(t.errors.save_failed); return }
+    setEntries((prev) =>
+      prev.map((e) => e.id === editEntry.id ? { ...e, raw_text: editText.trim() } : e)
+    )
+    setEditEntry(null)
+    toast.success(t.dashboard.edit_saved)
+  }
+
   const filterEntries = (status: Entry["status"]) => entries.filter((e) => e.status === status)
 
   const EmptyState = ({ msg }: { msg: string }) => (
@@ -112,6 +141,13 @@ export default function DashboardPage() {
             aria-label={t.dashboard.actions.share}
           >
             <Share2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => openEdit(entry)}
+            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            aria-label={t.dashboard.actions.edit}
+          >
+            <Pencil className="w-4 h-4" />
           </button>
           <button
             onClick={() => handlePauseResume(entry)}
@@ -208,6 +244,34 @@ export default function DashboardPage() {
           {t.dashboard.new_entry}
         </Button>
       </div>
+
+      {/* Edit Sheet */}
+      <Sheet open={!!editEntry} onOpenChange={(open) => !open && setEditEntry(null)}>
+        <SheetContent side="bottom" className="rounded-t-2xl px-5 pb-8">
+          <SheetHeader className="mb-4">
+            <SheetTitle>{t.dashboard.actions.edit}</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-3">
+            <Textarea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value.slice(0, MAX_CHARS))}
+              rows={5}
+              className="text-base resize-none"
+            />
+            <div className="flex justify-between items-center text-xs text-muted-foreground">
+              <span>{editText.trim().length < 10 ? t.dashboard.edit_min_chars : ""}</span>
+              <span>{editText.length}/{MAX_CHARS}</span>
+            </div>
+            <Button
+              className="w-full font-semibold"
+              onClick={handleSaveEdit}
+              disabled={saving || editText.trim().length < 10}
+            >
+              {saving ? "…" : t.dashboard.edit_save}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </main>
   )
 }

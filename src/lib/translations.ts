@@ -95,6 +95,9 @@ export const translations = {
       delete_yes: "Ja, löschen",
       delete_no: "Abbrechen",
       logout: "Abmelden",
+      edit_saved: "Eintrag gespeichert!",
+      edit_save: "Speichern",
+      edit_min_chars: "Min. 10 Zeichen",
     },
     errors: {
       network: "Netzwerkfehler – bitte versuche es erneut.",
@@ -201,6 +204,9 @@ export const translations = {
       delete_yes: "Yes, delete",
       delete_no: "Cancel",
       logout: "Sign out",
+      edit_saved: "Entry saved!",
+      edit_save: "Save",
+      edit_min_chars: "Min. 10 characters",
     },
     errors: {
       network: "Network error – please try again.",
