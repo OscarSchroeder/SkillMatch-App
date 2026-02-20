@@ -96,7 +96,130 @@ registriert sich danach mit Magic Link oder Google OAuth, vervollständigt ein M
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Seitenstruktur (URL-Routing)
+
+URL-basiertes Routing damit Browser-Back-Button korrekt funktioniert und jeder Schritt eine eigene URL hat:
+
+```
+/                        → Splash (nur 1x, danach redirect zu /onboarding/create)
+/onboarding/create       → Screen 1: Freitext-Input (Zettel-Moment)
+/onboarding/why          → Screen 2: Warum Registrierung
+/onboarding/auth         → Screen 3: Magic Link oder Google OAuth
+/onboarding/confirm      → Bestätigung "Prüf deine E-Mails"
+/onboarding/profile      → Screen 3b: Miniprofil
+/auth/callback           → Technische Rücksprung-Seite nach OAuth/Magic Link
+/dashboard               → Screen 4: Zettelwand
+```
+
+### Komponenten-Baum
+
+```
+OnboardingLayout (gemeinsames Layout für alle /onboarding/* Seiten)
+│
+├── SplashScreen (/)
+│   └── Logo + Claim + CTA "Loslegen"
+│
+├── FreitextScreen (/onboarding/create)
+│   ├── FreitextTextarea        ← großes Eingabefeld, rotierender Placeholder
+│   ├── ExamplesBottomSheet     ← Bottom Sheet mit 6 Beispielen (Sheet-Komponente)
+│   └── CTA "Weiter" (disabled wenn < 10 Zeichen)
+│
+├── WhyRegisterScreen (/onboarding/why)
+│   └── 3 Benefit-Bullets + CTA "Registrieren"
+│
+├── AuthScreen (/onboarding/auth)
+│   ├── MagicLinkForm           ← E-Mail Input + Button
+│   └── GoogleOAuthButton       ← OAuth-Redirect
+│
+├── MagicLinkConfirmScreen (/onboarding/confirm)
+│   └── "Prüf deine E-Mails" + Resend-Link
+│
+├── MiniProfileForm (/onboarding/profile)
+│   ├── Name/Alias Input (Pflicht)
+│   ├── LanguageSelect DE/EN
+│   └── CityInput (optional)
+│
+DashboardLayout (/dashboard)
+├── InfoBanner (fix, nicht schließbar im MVP)
+├── EntryTabs (Aktiv / Pausiert / Abgeschlossen)
+└── EntryCard (pro Eintrag)
+    ├── EntryTextPreview    ← max. 80 Zeichen
+    ├── CategoryBadge       ← "pending" im MVP
+    ├── MatchIndicator      ← "0 Matches"
+    └── EntryActions        ← Bearbeiten / Pausieren / Löschen / Teilen
+```
+
+### Datenhaltung
+
+**Was wird wo gespeichert:**
+
+| Daten | Wo | Warum |
+|-------|----|-------|
+| Freitext während Onboarding | React Context (im Memory) | Einfach, kein localStorage nötig, wird nach Registrierung direkt gespeichert |
+| "Splash bereits gesehen" | localStorage | Muss App-Neustarts überleben, klein und unkritisch |
+| Nutzer-Session / Auth | Supabase Auth (automatisch) | Supabase verwaltet Tokens selbst |
+| Profil (Name, Sprache, Stadt) | Supabase Datenbank – `profiles` Tabelle | Verknüpft mit Supabase Auth-User |
+| Einträge (Suche/Biete) | Supabase Datenbank – `entries` Tabelle | Muss persistent und pro Nutzer sein |
+
+**Datenbank-Tabellen (plain language):**
+
+`profiles` – Nutzerprofile:
+- Nutzer-ID (verknüpft mit Login)
+- Anzeigename / Alias
+- Sprache (DE oder EN)
+- Stadt (optional)
+- Referral-Code (eindeutig, wird bei Erstellung generiert)
+
+`entries` – Gesuche und Angebote:
+- Eintrag-ID
+- Nutzer-ID (wem gehört der Eintrag)
+- Originaltext (was der Nutzer getippt hat)
+- Intent: Suche oder Biete (im MVP noch nicht klassifiziert → "pending")
+- Kategorie (im MVP "pending" – wird später durch Matching-Engine befüllt)
+- Status: Aktiv / Pausiert / Abgeschlossen
+- Erstellt-Datum
+
+### Auth-Flow (Magic Link vs. Google)
+
+**Magic Link:**
+1. Nutzer gibt E-Mail ein → Supabase schickt Link
+2. Nutzer sieht Bestätigungsseite
+3. Klick auf Link öffnet `/auth/callback` → Supabase löst Session ein
+4. Weiterleitung zu `/onboarding/profile`
+
+**Google OAuth:**
+1. Klick → Redirect zu Google
+2. Google bestätigt → Redirect zurück zu `/auth/callback`
+3. Sofort weiter zu `/onboarding/profile` (kein E-Mail-Step)
+
+**Wichtig:** Nach erfolgreichem Auth wird der gespeicherte Freitext aus dem OnboardingContext als erster Entry in die Datenbank geschrieben.
+
+### Zustandsmanagement
+
+```
+OnboardingContext (React Context, keine externe Library nötig)
+└── freitextValue: string        ← Eingabe aus Screen 1
+└── currentStep: number          ← Für Progress-Anzeige
+```
+
+Kein Redux, kein Zustand-Manager nötig. Der Context lebt nur während des Onboardings und wird danach verworfen.
+
+### Tech-Entscheidungen (Begründungen)
+
+| Entscheidung | Gewählt | Warum |
+|---|---|---|
+| Routing | Next.js App Router (URL-basiert) | Browser-Back funktioniert, jeder Schritt ist verlinkbar/debuggbar |
+| Auth | Supabase Auth | Bereits im Stack, unterstützt Magic Link + OAuth nativ |
+| State für Freitext | React Context | Einfachste Lösung für einen einmaligen Flow; kein Overhead |
+| Splash-Flag | localStorage | Muss Neustarts überleben; sensible Daten sind es keine |
+| UI-Komponenten | shadcn/ui (Sheet, Button, Input, Tabs, Badge) | Bereits installiert, kein Custom-Code nötig |
+
+### Abhängigkeiten (neue Pakete)
+
+Keine neuen Pakete nötig – alles bereits im Projekt verfügbar:
+- `@supabase/supabase-js` ✓ (bereits installiert)
+- `shadcn/ui` Komponenten: Sheet, Tabs, Badge ✓ (bereits im Projekt)
 
 ## QA Test Results
 _To be added by /qa_

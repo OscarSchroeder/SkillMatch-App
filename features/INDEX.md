@@ -12,7 +12,7 @@
 
 | ID | Feature | Status | Spec | Created |
 |----|---------|--------|------|---------|
-| PROJ-1 | Onboarding + Freitext-Eintrag (Zettel-UX) | Planned | [Spec](PROJ-1-onboarding-freitext-eintrag.md) | 2026-02-20 |
+| PROJ-1 | Onboarding + Freitext-Eintrag (Zettel-UX) | In Progress | [Spec](PROJ-1-onboarding-freitext-eintrag.md) | 2026-02-20 |
 
 <!-- Add features above this line -->
 
