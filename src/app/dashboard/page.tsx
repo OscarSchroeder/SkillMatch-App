@@ -10,14 +10,27 @@ import { Textarea } from "@/components/ui/textarea"
 import { Logo } from "@/components/logo"
 import { useLang } from "@/contexts/language-context"
 import { createClient } from "@/lib/supabase-browser"
-import { Plus, Share2, Pause, Play, Trash2, Info, LogOut, Pencil } from "lucide-react"
+import { Plus, Share2, Pause, Play, Trash2, Info, LogOut, Pencil, Bell } from "lucide-react"
 import { toast } from "sonner"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 type Entry = {
   id: string
   raw_text: string
   category: string
   status: "active" | "paused" | "closed"
+  created_at: string
+}
+
+type Notification = {
+  id: string
+  reference_id: string
+  read: boolean
   created_at: string
 }
 
@@ -32,6 +45,9 @@ export default function DashboardPage() {
   const [editEntry, setEditEntry] = useState<Entry | null>(null)
   const [editText, setEditText] = useState("")
   const [saving, setSaving] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [pushEnabled, setPushEnabled] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -43,6 +59,33 @@ export default function DashboardPage() {
       fetchEntries()
     })
   }, [router])
+
+  useEffect(() => {
+    const supabase = createClient()
+    const loadNotifications = async () => {
+      const { data } = await supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20)
+      if (data) {
+        setNotifications(data)
+        setUnreadCount(data.filter((n: Notification) => !n.read).length)
+      }
+    }
+    loadNotifications()
+
+    const channel = supabase
+      .channel("notifications")
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+      }, () => loadNotifications())
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   const fetchEntries = async () => {
     const supabase = createClient()
@@ -89,6 +132,33 @@ export default function DashboardPage() {
     await supabase.auth.signOut()
     localStorage.removeItem("skillmatch_splash_seen")
     router.replace("/")
+  }
+
+  const markAllRead = async () => {
+    const supabase = createClient()
+    await supabase.from("notifications").update({ read: true }).eq("read", false)
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    setUnreadCount(0)
+  }
+
+  const enablePush = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js")
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      })
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      })
+      setPushEnabled(true)
+      toast.success(t.dashboard.push_enabled)
+    } catch {
+      toast.error(t.errors.network)
+    }
   }
 
   const openEdit = (entry: Entry) => {
@@ -176,13 +246,68 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <Logo className="w-32 h-auto" />
-        <button
-          onClick={handleLogout}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          aria-label={t.dashboard.logout}
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="relative p-2 rounded-lg hover:bg-muted transition-colors" aria-label={t.dashboard.notifications_title}>
+                <Bell className="w-5 h-5 text-muted-foreground" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <div className="px-3 py-2 flex items-center justify-between">
+                <span className="text-sm font-semibold">{t.dashboard.notifications_title}</span>
+                {unreadCount > 0 && (
+                  <button onClick={markAllRead} className="text-xs text-primary">
+                    Alle gelesen
+                  </button>
+                )}
+              </div>
+              {notifications.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  {t.dashboard.no_notifications}
+                </div>
+              ) : (
+                notifications.slice(0, 5).map((n) => (
+                  <DropdownMenuItem
+                    key={n.id}
+                    className={`cursor-pointer ${!n.read ? "bg-primary/5" : ""}`}
+                    onClick={() => router.push(`/matches/${n.reference_id}`)}
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-medium">{t.dashboard.new_match}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(n.created_at).toLocaleDateString("de-DE")}
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                ))
+              )}
+              {!pushEnabled && (
+                <div className="px-3 py-2 border-t">
+                  <button
+                    onClick={enablePush}
+                    className="w-full text-xs text-primary hover:underline"
+                  >
+                    {t.dashboard.enable_push}
+                  </button>
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <button
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-foreground transition-colors p-2"
+            aria-label={t.dashboard.logout}
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Info Banner */}

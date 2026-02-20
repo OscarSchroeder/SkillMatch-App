@@ -98,6 +98,11 @@ export const translations = {
       edit_saved: "Eintrag gespeichert!",
       edit_save: "Speichern",
       edit_min_chars: "Min. 10 Zeichen",
+      notifications_title: "Benachrichtigungen",
+      no_notifications: "Keine neuen Benachrichtigungen",
+      new_match: "Neuer Match für deinen Eintrag",
+      enable_push: "Benachrichtigungen aktivieren",
+      push_enabled: "Benachrichtigungen aktiv",
     },
     errors: {
       network: "Netzwerkfehler – bitte versuche es erneut.",
@@ -207,6 +212,11 @@ export const translations = {
       edit_saved: "Entry saved!",
       edit_save: "Save",
       edit_min_chars: "Min. 10 characters",
+      notifications_title: "Notifications",
+      no_notifications: "No new notifications",
+      new_match: "New match for your entry",
+      enable_push: "Enable notifications",
+      push_enabled: "Notifications enabled",
     },
     errors: {
       network: "Network error – please try again.",
