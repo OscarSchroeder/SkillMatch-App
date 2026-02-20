@@ -5,12 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Logo } from "@/components/logo"
 import { useLang } from "@/contexts/language-context"
 import { useOnboarding } from "@/contexts/onboarding-context"
 import { createClient } from "@/lib/supabase-browser"
-import { ChevronLeft, Mail, Lock } from "lucide-react"
+import { ChevronLeft, Mail } from "lucide-react"
 import { toast } from "sonner"
 
 function AuthContent() {
@@ -19,6 +18,7 @@ function AuthContent() {
   const { t } = useLang()
   const { setEmail: saveEmail } = useOnboarding()
 
+  const [mode, setMode] = useState<"signup" | "login">("signup")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
@@ -28,6 +28,46 @@ function AuthContent() {
   const linkExpired = searchParams.get("error") === "link_expired"
 
   const validateEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
+
+  const validate = () => {
+    let valid = true
+    if (!validateEmail(email)) { setEmailError(t.auth.invalid_email); valid = false }
+    if (password.length < 6) { setPasswordError(t.auth.password_short); valid = false }
+    return valid
+  }
+
+  // --- Sign Up (new account) ---
+  const handleSignUp = async () => {
+    if (!validate()) return
+    setLoading(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    setLoading(false)
+    if (error) { toast.error(t.errors.auth_failed); return }
+    if (data.session) {
+      window.location.href = "/onboarding/profile"
+    } else {
+      saveEmail(email)
+      router.push("/onboarding/confirm")
+    }
+  }
+
+  // --- Login (existing account) ---
+  const handleLogin = async () => {
+    if (!validate()) return
+    setLoading(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setLoading(false)
+      toast.error(t.auth.login_failed)
+      return
+    }
+    const { data: profile } = await supabase
+      .from("profiles").select("id").eq("id", data.user.id).single()
+    setLoading(false)
+    window.location.href = profile ? "/dashboard" : "/onboarding/profile"
+  }
 
   // --- Magic Link ---
   const handleMagicLink = async () => {
@@ -45,57 +85,10 @@ function AuthContent() {
     router.push("/onboarding/confirm")
   }
 
-  // --- Password: Login ---
-  const handleLogin = async () => {
-    let valid = true
-    if (!validateEmail(email)) { setEmailError(t.auth.invalid_email); valid = false }
-    if (password.length < 6) { setPasswordError(t.auth.password_short); valid = false }
-    if (!valid) return
+  const switchMode = (next: "signup" | "login") => {
+    setMode(next)
     setEmailError("")
     setPasswordError("")
-    setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setLoading(false)
-      toast.error(t.auth.login_failed)
-      return
-    }
-    // Check if user already has a profile → dashboard, else onboarding
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", data.user.id)
-      .single()
-    setLoading(false)
-    if (profile) {
-      window.location.href = "/dashboard"
-    } else {
-      window.location.href = "/onboarding/profile"
-    }
-  }
-
-  // --- Password: Sign Up ---
-  const handleSignUp = async () => {
-    let valid = true
-    if (!validateEmail(email)) { setEmailError(t.auth.invalid_email); valid = false }
-    if (password.length < 6) { setPasswordError(t.auth.password_short); valid = false }
-    if (!valid) return
-    setEmailError("")
-    setPasswordError("")
-    setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    setLoading(false)
-    if (error) { toast.error(t.errors.auth_failed); return }
-    if (data.session) {
-      // Auto-confirmed (email confirmation disabled in Supabase)
-      window.location.href = "/onboarding/profile"
-    } else {
-      // Email confirmation required
-      saveEmail(email)
-      router.push("/onboarding/confirm")
-    }
   }
 
   return (
@@ -119,11 +112,11 @@ function AuthContent() {
           </div>
         )}
 
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold text-foreground">{t.auth.headline}</h1>
-        </div>
+        <h1 className="text-2xl font-bold text-foreground">
+          {mode === "signup" ? t.auth.headline_signup : t.auth.headline_login}
+        </h1>
 
-        {/* Shared email field */}
+        {/* Email */}
         <div className="space-y-2">
           <Label htmlFor="email">{t.auth.email_label}</Label>
           <Input
@@ -133,83 +126,96 @@ function AuthContent() {
             value={email}
             onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError("") }}
             className="h-12 text-base"
-            aria-describedby={emailError ? "email-error" : undefined}
           />
           {emailError && (
-            <p id="email-error" className="text-sm text-destructive" aria-live="polite">
-              {emailError}
-            </p>
+            <p className="text-sm text-destructive">{emailError}</p>
           )}
         </div>
 
-        {/* Tabs: Passwort | Magic Link */}
-        <Tabs defaultValue="password" className="w-full">
-          <TabsList className="w-full mb-4">
-            <TabsTrigger value="password" className="flex-1">
-              <Lock className="w-3.5 h-3.5 mr-1.5" />
-              {t.auth.tab_password}
-            </TabsTrigger>
-            <TabsTrigger value="magic" className="flex-1">
-              <Mail className="w-3.5 h-3.5 mr-1.5" />
-              {t.auth.tab_magic}
-            </TabsTrigger>
-          </TabsList>
+        {/* Password */}
+        <div className="space-y-2">
+          <Label htmlFor="password">{t.auth.password_label}</Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder={t.auth.password_placeholder}
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); if (passwordError) setPasswordError("") }}
+            onKeyDown={(e) => e.key === "Enter" && (mode === "signup" ? handleSignUp() : handleLogin())}
+            className="h-12 text-base"
+          />
+          {passwordError && (
+            <p className="text-sm text-destructive">{passwordError}</p>
+          )}
+        </div>
 
-          {/* Password Tab */}
-          <TabsContent value="password" className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">{t.auth.password_label}</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder={t.auth.password_placeholder}
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); if (passwordError) setPasswordError("") }}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                className="h-12 text-base"
-                aria-describedby={passwordError ? "password-error" : undefined}
-              />
-              {passwordError && (
-                <p id="password-error" className="text-sm text-destructive" aria-live="polite">
-                  {passwordError}
-                </p>
-              )}
-            </div>
+        {/* Primary CTA */}
+        {mode === "signup" ? (
+          <Button
+            size="lg"
+            className="w-full font-semibold"
+            onClick={handleSignUp}
+            disabled={loading || !email || !password}
+          >
+            {loading ? "…" : t.auth.signup_cta}
+          </Button>
+        ) : (
+          <Button
+            size="lg"
+            className="w-full font-semibold"
+            onClick={handleLogin}
+            disabled={loading || !email || !password}
+          >
+            {loading ? "…" : t.auth.login_cta}
+          </Button>
+        )}
 
-            <div className="flex gap-3">
-              <Button
-                size="lg"
-                variant="outline"
-                className="flex-1 font-semibold"
-                onClick={handleLogin}
-                disabled={loading || !email || !password}
+        {/* Mode toggle */}
+        <p className="text-sm text-center text-muted-foreground">
+          {mode === "signup" ? (
+            <>
+              {t.auth.already_registered}{" "}
+              <button
+                className="text-primary underline-offset-2 hover:underline font-medium"
+                onClick={() => switchMode("login")}
               >
-                {loading ? "…" : t.auth.login_cta}
-              </Button>
-              <Button
-                size="lg"
-                className="flex-1 font-semibold"
-                onClick={handleSignUp}
-                disabled={loading || !email || !password}
+                {t.auth.login_cta}
+              </button>
+            </>
+          ) : (
+            <>
+              {t.auth.no_account}{" "}
+              <button
+                className="text-primary underline-offset-2 hover:underline font-medium"
+                onClick={() => switchMode("signup")}
               >
-                {loading ? "…" : t.auth.signup_cta}
-              </Button>
-            </div>
-          </TabsContent>
+                {t.auth.signup_cta}
+              </button>
+            </>
+          )}
+        </p>
 
-          {/* Magic Link Tab */}
-          <TabsContent value="magic" className="space-y-4">
-            <Button
-              size="lg"
-              className="w-full text-base font-semibold"
-              onClick={handleMagicLink}
-              disabled={loading || !email}
-            >
-              <Mail className="w-4 h-4 mr-2" />
-              {loading ? t.auth.sending : t.auth.magic_link_cta}
-            </Button>
-          </TabsContent>
-        </Tabs>
+        {/* Divider */}
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-3 text-muted-foreground">{t.auth.divider}</span>
+          </div>
+        </div>
+
+        {/* Magic Link as alternative */}
+        <Button
+          size="lg"
+          variant="outline"
+          className="w-full font-semibold"
+          onClick={handleMagicLink}
+          disabled={loading || !email}
+        >
+          <Mail className="w-4 h-4 mr-2" />
+          {loading ? t.auth.sending : t.auth.magic_link_cta}
+        </Button>
       </div>
     </main>
   )
