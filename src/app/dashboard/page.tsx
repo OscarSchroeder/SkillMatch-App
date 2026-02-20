@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Logo } from "@/components/logo"
 import { useLang } from "@/contexts/language-context"
 import { createClient } from "@/lib/supabase-browser"
-import { Plus, Share2, Pause, Play, Trash2, Info, LogOut, Pencil, Bell } from "lucide-react"
+import { Plus, Share2, Pause, Play, Trash2, Info, LogOut, Pencil, Bell, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import {
   DropdownMenu,
@@ -23,7 +23,8 @@ type Entry = {
   id: string
   raw_text: string
   category: string
-  status: "active" | "paused" | "closed"
+  status: "active" | "paused" | "done" | "closed" | "deleted"
+  skill_ids: string[]
   created_at: string
 }
 
@@ -133,6 +134,16 @@ export default function DashboardPage() {
     setDeletingId(null)
   }
 
+  const handleDone = async (entry: Entry) => {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("entries")
+      .update({ status: "done" })
+      .eq("id", entry.id)
+    if (error) { toast.error(t.errors.save_failed); return }
+    setEntries((prev) => prev.map((e) => e.id === entry.id ? { ...e, status: "done" as const } : e))
+  }
+
   const handleShare = async (entry: Entry) => {
     const text = entry.raw_text.slice(0, 100)
     if (navigator.share) {
@@ -202,63 +213,92 @@ export default function DashboardPage() {
     toast.success(t.dashboard.edit_saved)
   }
 
-  const filterEntries = (status: Entry["status"]) => entries.filter((e) => e.status === status)
+  // "done" tab shows both "done" and legacy "closed" entries
+  const filterEntries = (status: "active" | "paused" | "done") =>
+    entries.filter((e) => status === "done" ? (e.status === "done" || e.status === "closed") : e.status === status)
 
   const EmptyState = ({ msg }: { msg: string }) => (
     <div className="text-center py-12 text-muted-foreground text-sm">{msg}</div>
   )
 
-  const EntryCard = ({ entry }: { entry: Entry }) => (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-foreground line-clamp-2 flex-1">
-          {entry.raw_text}
-        </p>
-        <Badge variant="secondary" className="text-xs flex-shrink-0">
-          {entry.category === "pending" ? t.dashboard.category_pending : entry.category}
-        </Badge>
-      </div>
+  const EntryCard = ({ entry }: { entry: Entry }) => {
+    const isDone = entry.status === "done" || entry.status === "closed"
+    return (
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm text-foreground line-clamp-2 flex-1">
+            {entry.raw_text}
+          </p>
+          <Badge variant="secondary" className="text-xs flex-shrink-0">
+            {entry.category === "pending" ? t.dashboard.category_pending : entry.category}
+          </Badge>
+        </div>
 
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
-          {matchCounts[entry.id] ?? 0} {t.dashboard.match_label}
-        </span>
-        <div className="flex gap-1">
-          <button
-            onClick={() => handleShare(entry)}
-            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            aria-label={t.dashboard.actions.share}
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => openEdit(entry)}
-            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            aria-label={t.dashboard.actions.edit}
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handlePauseResume(entry)}
-            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            aria-label={entry.status === "active" ? t.dashboard.actions.pause : t.dashboard.actions.resume}
-          >
-            {entry.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={() => {
-              if (confirm(t.dashboard.delete_confirm)) handleDelete(entry.id)
-            }}
-            disabled={deletingId === entry.id}
-            className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
-            aria-label={t.dashboard.actions.delete}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+        {/* Skill chips */}
+        {entry.skill_ids?.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {entry.skill_ids.map((skill) => (
+              <Badge key={skill} variant="outline" className="text-xs px-2 py-0.5">
+                {skill}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {matchCounts[entry.id] ?? 0} {t.dashboard.match_label}
+          </span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleShare(entry)}
+              className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              aria-label={t.dashboard.actions.share}
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+            {!isDone && (
+              <>
+                <button
+                  onClick={() => openEdit(entry)}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  aria-label={t.dashboard.actions.edit}
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handlePauseResume(entry)}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  aria-label={entry.status === "active" ? t.dashboard.actions.pause : t.dashboard.actions.resume}
+                >
+                  {entry.status === "active" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm(t.dashboard.delete_confirm)) handleDone(entry)
+                  }}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  aria-label={t.dashboard.actions.done}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                if (confirm(t.dashboard.delete_confirm)) handleDelete(entry.id)
+              }}
+              disabled={deletingId === entry.id}
+              className="p-2 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
+              aria-label={t.dashboard.actions.delete}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <main className="flex flex-col min-h-screen px-5 py-6 max-w-md mx-auto">
@@ -345,7 +385,7 @@ export default function DashboardPage() {
         <TabsList className="w-full mb-4">
           <TabsTrigger value="active" className="flex-1">{t.dashboard.tabs.active}</TabsTrigger>
           <TabsTrigger value="paused" className="flex-1">{t.dashboard.tabs.paused}</TabsTrigger>
-          <TabsTrigger value="closed" className="flex-1">{t.dashboard.tabs.closed}</TabsTrigger>
+          <TabsTrigger value="done" className="flex-1">{t.dashboard.tabs.done}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="active" className="space-y-3">
@@ -368,11 +408,11 @@ export default function DashboardPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="closed" className="space-y-3">
-          {filterEntries("closed").length === 0 ? (
-            <EmptyState msg={t.dashboard.empty_closed} />
+        <TabsContent value="done" className="space-y-3">
+          {filterEntries("done").length === 0 ? (
+            <EmptyState msg={t.dashboard.empty_done} />
           ) : (
-            filterEntries("closed").map((e) => <EntryCard key={e.id} entry={e} />)
+            filterEntries("done").map((e) => <EntryCard key={e.id} entry={e} />)
           )}
         </TabsContent>
       </Tabs>
