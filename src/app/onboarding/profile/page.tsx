@@ -56,7 +56,7 @@ export default function ProfilePage() {
 
       // Save the freitext entry if present
       if (freitext.trim()) {
-        const { error: entryError } = await supabase
+        const { data: entryData, error: entryError } = await supabase
           .from("entries")
           .insert({
             user_id: user.id,
@@ -65,7 +65,18 @@ export default function ProfilePage() {
             category: "pending",
             status: "active",
           })
+          .select("id")
+          .single()
         if (entryError) throw entryError
+
+        // Embedding auslösen (fire-and-forget)
+        if (entryData?.id) {
+          fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/embed-entry`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entry_id: entryData.id, raw_text: freitext.trim() }),
+          }).catch(console.error)
+        }
       }
 
       setLang(selectedLang)
