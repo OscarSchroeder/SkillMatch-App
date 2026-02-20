@@ -65,9 +65,11 @@ export default function DashboardPage() {
   useEffect(() => {
     const supabase = createClient()
     const loadNotifications = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
       const { data } = await supabase
         .from("notifications")
         .select("*")
+        .eq("user_id", user?.id)
         .order("created_at", { ascending: false })
         .limit(20)
       if (data) {
@@ -91,9 +93,11 @@ export default function DashboardPage() {
 
   const fetchEntries = async () => {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
     const { data, error } = await supabase
       .from("entries")
       .select("*")
+      .eq("user_id", user!.id)
       .order("created_at", { ascending: false })
     if (!error && data) {
       setEntries(data)
@@ -116,11 +120,13 @@ export default function DashboardPage() {
 
   const handlePauseResume = async (entry: Entry) => {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
     const newStatus = entry.status === "active" ? "paused" : "active"
     const { error } = await supabase
       .from("entries")
       .update({ status: newStatus })
       .eq("id", entry.id)
+      .eq("user_id", user!.id)
     if (error) { toast.error(t.errors.save_failed); return }
     setEntries((prev) => prev.map((e) => e.id === entry.id ? { ...e, status: newStatus } : e))
   }
@@ -128,7 +134,8 @@ export default function DashboardPage() {
   const handleDelete = async (id: string) => {
     setDeletingId(id)
     const supabase = createClient()
-    const { error } = await supabase.from("entries").delete().eq("id", id)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase.from("entries").delete().eq("id", id).eq("user_id", user!.id)
     if (error) { toast.error(t.errors.save_failed); setDeletingId(null); return }
     setEntries((prev) => prev.filter((e) => e.id !== id))
     setDeletingId(null)
@@ -136,10 +143,12 @@ export default function DashboardPage() {
 
   const handleDone = async (entry: Entry) => {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase
       .from("entries")
       .update({ status: "done" })
       .eq("id", entry.id)
+      .eq("user_id", user!.id)
     if (error) { toast.error(t.errors.save_failed); return }
     setEntries((prev) => prev.map((e) => e.id === entry.id ? { ...e, status: "done" as const } : e))
   }
@@ -163,7 +172,8 @@ export default function DashboardPage() {
 
   const markAllRead = async () => {
     const supabase = createClient()
-    await supabase.from("notifications").update({ read: true }).eq("read", false)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from("notifications").update({ read: true }).eq("read", false).eq("user_id", user!.id)
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
     setUnreadCount(0)
   }

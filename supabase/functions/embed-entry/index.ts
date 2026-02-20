@@ -22,7 +22,13 @@ async function getEmbedding(text: string): Promise<number[]> {
   return json.data[0].embedding
 }
 
-async function classifyIntent(text: string): Promise<string> {
+interface PingClassification {
+  classification: "peer" | "need" | "offer"
+  specificity: "open" | "specific"
+  intent: "seek" | "offer"
+}
+
+async function classifyPing(text: string): Promise<PingClassification> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -33,15 +39,38 @@ async function classifyIntent(text: string): Promise<string> {
       model: "gpt-4o-mini",
       messages: [{
         role: "user",
-        content: `Classify this text as 'seek' (looking for something/someone) or 'offer' (offering a skill/service/help). Reply with exactly one word: seek or offer.\n\nText: ${text}`,
+        content: `Analyze this text and classify it. Reply with ONLY valid JSON, no explanation.
+
+Classification rules:
+- "peer": looking for a person to connect with (partner, teammate, friend, sparring partner, co-founder)
+- "need": looking for help, a service, or a skill from someone else
+- "offer": offering a skill, service, or help to others
+
+Specificity rules:
+- "specific": has clear, concrete requirements (named skills, timeframe, location, specific criteria)
+- "open": vague or general, could match many people
+
+Reply format (JSON only):
+{"classification": "peer" | "need" | "offer", "specificity": "open" | "specific"}
+
+Text: ${text}`,
       }],
-      max_tokens: 5,
+      max_tokens: 30,
       temperature: 0,
+      response_format: { type: "json_object" },
     }),
   })
   const json = await res.json()
-  const answer = json.choices?.[0]?.message?.content?.trim().toLowerCase() ?? "seek"
-  return answer === "offer" ? "offer" : "seek"
+  const raw = json.choices?.[0]?.message?.content ?? "{}"
+  let parsed: { classification?: string; specificity?: string } = {}
+  try { parsed = JSON.parse(raw) } catch { /* ignore */ }
+
+  const classification = (["peer", "need", "offer"].includes(parsed.classification ?? ""))
+    ? parsed.classification as "peer" | "need" | "offer"
+    : "need"
+  const specificity = parsed.specificity === "specific" ? "specific" : "open"
+  const intent: "seek" | "offer" = classification === "offer" ? "offer" : "seek"
+  return { classification, specificity, intent }
 }
 
 Deno.serve(async (req: Request) => {
@@ -51,20 +80,48 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "Missing entry_id or raw_text" }), { status: 400 })
     }
 
-    const [embedding, intent] = await Promise.all([
+    // Auth check
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    const authHeader = req.headers.get("Authorization")
+    const token = authHeader?.replace("Bearer ", "")
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 })
+    }
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (!user || authError) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 })
+    }
+
+    // Ownership check
+    const { data: entryOwner } = await supabase
+      .from("entries").select("user_id").eq("id", entry_id).single()
+    if (!entryOwner || entryOwner.user_id !== user.id) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
+    }
+
+    const [embedding, pingClass] = await Promise.all([
       getEmbedding(raw_text),
-      classifyIntent(raw_text),
+      classifyPing(raw_text),
     ])
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     const { error } = await supabase
       .from("entries")
-      .update({ embedding: JSON.stringify(embedding), intent })
+      .update({
+        embedding: JSON.stringify(embedding),
+        intent: pingClass.intent,
+        classification: pingClass.classification,
+        specificity: pingClass.specificity,
+      })
       .eq("id", entry_id)
 
     if (error) throw error
 
-    return new Response(JSON.stringify({ success: true, intent }), {
+    return new Response(JSON.stringify({
+      success: true,
+      intent: pingClass.intent,
+      classification: pingClass.classification,
+      specificity: pingClass.specificity,
+    }), {
       headers: { "Content-Type": "application/json" },
     })
   } catch (err) {

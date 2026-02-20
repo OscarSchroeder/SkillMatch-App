@@ -45,6 +45,12 @@ export default function MatchPage() {
       const entryA = data.entry_a as unknown as { id: string; raw_text: string; intent: string; skill_ids: string[]; user_id: string }
       const entryB = data.entry_b as unknown as { id: string; raw_text: string; intent: string; skill_ids: string[]; user_id: string }
 
+      // Ownership check (defense-in-depth, RLS already protects this)
+      if (user.id !== entryA.user_id && user.id !== entryB.user_id) {
+        router.replace("/dashboard")
+        return
+      }
+
       const myEntry = entryA.user_id === user.id ? entryA : entryB
       const theirEntry = entryA.user_id === user.id ? entryB : entryA
 

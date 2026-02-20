@@ -124,9 +124,13 @@ export default function ProfilePage() {
 
         // Trigger embedding + full classification (fire-and-forget)
         if (entryData?.id) {
+          const { data: { session } } = await supabase.auth.getSession()
           fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/embed-entry`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session?.access_token}`,
+            },
             body: JSON.stringify({ entry_id: entryData.id, raw_text: freitext.trim() }),
           }).catch(console.error)
         }
